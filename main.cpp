@@ -44,6 +44,9 @@ static DigitalOut stepX(P2_2);
 static DigitalOut dirX(P2_6);
 static DigitalOut enX(P2_1);
 
+static DigitalOut linearActuatorINA(P2_4);
+static DigitalOut linearActuatorINB(P2_7);
+
 static DigitalOut MS1(P1_17);
 static DigitalOut MS2(P0_4);
 static DigitalOut MS3(P1_10);
@@ -165,6 +168,23 @@ void mCommand(void) {
       pickup();
     }
   }
+
+    // command [l,0]= linearact off, [l,1] = linearact down, [l,2] = linearact up
+  else if (messageFromPC[0] == 'l' && messageFromPC[1] == '\0') {
+    if (newCommand == true) {
+      if (integerFromPC == 0) {
+        linearActuatorINA.write(0);
+        linearActuatorINB.write(0);
+      } else if (integerFromPC == 1) {
+        linearActuatorINA.write(0);
+        linearActuatorINB.write(1);
+      }
+      else if (integerFromPC == 2) {
+        linearActuatorINA.write(1);
+        linearActuatorINB.write(0);
+      }
+    }
+    }
   // get current timer
   else if (messageFromPC[0] == 't' && messageFromPC[1] == '\0') {
     if (newCommand == true) {
@@ -185,11 +205,16 @@ int main(void) {
   serial_port.set_baud(57600);
   serial_port.set_format(8, BufferedSerial::None, 1);
   printf("Praktikum Fisdas\r\n");
+
   // enable stepper, set step_size
-  enX = 0;
-  MS1 = 0;
-  MS2 = 0;
-  MS3 = 0;
+  enX.write(0);
+  MS1.write(0);
+  MS2.write(0);
+  MS3.write(0);
+
+  // stop linear actuator
+  linearActuatorINA.write(0);
+  linearActuatorINB.write(0);
 
   // Input Mode for Digital Inputs
   proxSW0.mode(PullNone);
