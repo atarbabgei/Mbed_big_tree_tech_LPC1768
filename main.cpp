@@ -1,9 +1,17 @@
+#include "QEIx4.h"
 #include "mbed.h"
 
+#define timer_read_f(x) chrono::duration<float>((x).elapsed_time()).count()
+#define timer_read_s(x)                                                        \
+  chrono::duration_cast<chrono::seconds>((x).elapsed_time()).count();
+#define timer_read_ms(x)                                                       \
+  chrono::duration_cast<chrono::milliseconds>((x).elapsed_time()).count()
+#define timer_read_us(x) (x).elapsed_time().count()
+
+
+
+Timer t; // timer for polling
 unsigned long long timerValue;
-volatile unsigned int temp,
-    counter = 0; // This variable will increase or decrease depending on the
-                 // rotation of encoder
 
 // Receive with start- and end-markers combined with parsing
 const unsigned char numChars = 8;
@@ -22,9 +30,14 @@ int integerFromPC = 0;
 // Application buffer to receive the data
 char buf[MAXIMUM_BUFFER_SIZE] = {0};
 
+// Encoder Pinout
+QEIx4 encoder(P0_0, P0_1, NC,
+              (QEIx4::EMODE)(QEIx4::IRQ_NO_JAMMING |
+                             QEIx4::SPEED)); // QEI with AB signals only
+
 // Create a BufferedSerial object with a default baud rate.
 static BufferedSerial serial_port(P0_2, P0_3);
-FileHandle *mbed::mbed_override_console(int fd) { return &serial_port;}
+FileHandle *mbed::mbed_override_console(int fd) { return &serial_port; }
 
 // Pinout
 static DigitalOut stepX(P2_2);
@@ -39,8 +52,6 @@ static DigitalIn limitSW(P0_23);
 static DigitalOut MAG(P2_3);
 static DigitalIn proxSW0(P2_0);
 static DigitalIn proxSW1(P0_10);
-InterruptIn encoderPhaseA(P0_0);
-InterruptIn encoderPhaseB(P0_1);
 
 // Get Serial and parse Start End Markers
 void recvWithStartEndMarkers() {
@@ -163,31 +174,17 @@ void mCommand(void) {
   newCommand = false;
 };
 
-void ai0() {
-  // ai0 is activated if DigitalPin nr 2 is going from LOW to HIGH
-  // Check pin 3 to determine the direction
-  if (encoderPhaseB == 0) {
-    counter++;
-  } else {
-    counter--;
-  }
-}
-
-void ai1() {
-  // ai0 is activated if DigitalPin nr 3 is going from LOW to HIGH
-  // Check with pin 2 to determine the direction
-  if (encoderPhaseA == 0) {
-    counter--;
-  } else {
-    counter++;
-  }
-}
-
 int main(void) {
-  
+  // Start Timer
+  t.start();
+
+  // Setup Encoder
+  encoder.setSpeedFactor(1.0f);
+  encoder.setPositionFactor((1.0 / 1600));
+
   serial_port.set_baud(57600);
   serial_port.set_format(8, BufferedSerial::None, 1);
-  printf("hello world\r\n");
+  printf("Praktikum Fisdas\r\n");
   // enable stepper, set step_size
   enX = 0;
   MS1 = 0;
@@ -198,30 +195,26 @@ int main(void) {
   proxSW0.mode(PullNone);
   proxSW1.mode(PullNone);
   limitSW.mode(PullUp);
-  encoderPhaseA.mode(PullUp);
-  encoderPhaseB.mode(PullUp);
-
-  encoderPhaseA.rise(&ai1);
-  encoderPhaseB.rise(&ai0);
 
   while (1) {
     // receive serial
-     
     recvWithStartEndMarkers();
 
-    //if valid data, then parse data
+    // if valid data, then parse data
     if (newData == true) {
       strcpy(tempChars, receivedChars);
       parseData();
       newData = false;
     }
 
-    //check any valid command received
+    // check any valid command received
     mCommand();
-     
-    if (counter != temp) {
-    printf("count = %d \r\n", counter);
-    temp = counter;
+
+    if (timer_read_ms(t) > 250) { // every quater second (4 Hz)
+      t.reset();
+      t.start();
+      printf(" count: %6d, speed: %f, pos: %f \r\n", (int)encoder,
+             encoder.getSpeed(), encoder.getPosition()); // print counter values
     }
   }
 }
