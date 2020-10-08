@@ -1,6 +1,9 @@
 #include "mbed.h"
 
 unsigned long long timerValue;
+volatile unsigned int temp,
+    counter = 0; // This variable will increase or decrease depending on the
+                 // rotation of encoder
 
 // Receive with start- and end-markers combined with parsing
 const unsigned char numChars = 8;
@@ -21,7 +24,7 @@ char buf[MAXIMUM_BUFFER_SIZE] = {0};
 
 // Create a BufferedSerial object with a default baud rate.
 static BufferedSerial serial_port(P0_2, P0_3);
-FileHandle *mbed::mbed_override_console(int fd) { return &serial_port; }
+FileHandle *mbed::mbed_override_console(int fd) { return &serial_port;}
 
 // Pinout
 static DigitalOut stepX(P2_2);
@@ -36,8 +39,10 @@ static DigitalIn limitSW(P0_23);
 static DigitalOut MAG(P2_3);
 static DigitalIn proxSW0(P2_0);
 static DigitalIn proxSW1(P0_10);
+InterruptIn encoderPhaseA(P0_0);
+InterruptIn encoderPhaseB(P0_1);
 
-//Get Serial and parse Start End Markers
+// Get Serial and parse Start End Markers
 void recvWithStartEndMarkers() {
   static bool recvInProgress = false;
   static unsigned char ndx = 0;
@@ -63,8 +68,7 @@ void recvWithStartEndMarkers() {
         newData = true;
         newCommand = true;
       }
-    }
-    else if (rc == startMarker) {
+    } else if (rc == startMarker) {
       recvInProgress = true;
     }
   }
@@ -85,19 +89,19 @@ void parseData() {
 
 // pickup trolley function
 void pickup() {
-  //go forward until proxSW0 detected
-  dirX.write(0); 
-  while(proxSW0 == 1){
+  // go forward until proxSW0 detected
+  dirX.write(0);
+  while (proxSW0 == 1) {
     stepX.write(1);
     ThisThread::sleep_for(1ms);
     stepX.write(0);
     ThisThread::sleep_for(1ms);
   }
-  //turn magnet ON, then wait
+  // turn magnet ON, then wait
   MAG.write(1);
   ThisThread::sleep_for(500ms);
-  //go backward until limitSW detected 
-  dirX.write(1); 
+  // go backward until limitSW detected
+  dirX.write(1);
   while (limitSW == 1) {
     stepX.write(1);
     ThisThread::sleep_for(1ms);
@@ -121,10 +125,10 @@ void mCommand(void) {
       }
     }
   }
-  // command [x] then CW for "integerFromPC" steps 
+  // command [x] then CW for "integerFromPC" steps
   else if (messageFromPC[0] == 'x' && messageFromPC[1] == '\0') {
     if (newCommand == true) {
-      dirX.write(1); 
+      dirX.write(1);
       for (int x = 0; x < integerFromPC; x++) {
         if (limitSW == 1) {
           stepX.write(1);
@@ -144,7 +148,7 @@ void mCommand(void) {
         MAG.write(1);
       }
     }
-  // command [s] for picking up trolleys
+    // command [s] for picking up trolleys
   } else if (messageFromPC[0] == 's' && messageFromPC[1] == '\0') {
     if (newCommand == true) {
       pickup();
@@ -159,24 +163,50 @@ void mCommand(void) {
   newCommand = false;
 };
 
+void ai0() {
+  // ai0 is activated if DigitalPin nr 2 is going from LOW to HIGH
+  // Check pin 3 to determine the direction
+  if (encoderPhaseB == 0) {
+    counter++;
+  } else {
+    counter--;
+  }
+}
+
+void ai1() {
+  // ai0 is activated if DigitalPin nr 3 is going from LOW to HIGH
+  // Check with pin 2 to determine the direction
+  if (encoderPhaseA == 0) {
+    counter--;
+  } else {
+    counter++;
+  }
+}
 
 int main(void) {
+  
   serial_port.set_baud(57600);
   serial_port.set_format(8, BufferedSerial::None, 1);
-
+  printf("hello world\r\n");
   // enable stepper, set step_size
   enX = 0;
   MS1 = 0;
   MS2 = 0;
   MS3 = 0;
 
-  //Input Mode for Digital Inputs
+  // Input Mode for Digital Inputs
   proxSW0.mode(PullNone);
   proxSW1.mode(PullNone);
   limitSW.mode(PullUp);
+  encoderPhaseA.mode(PullUp);
+  encoderPhaseB.mode(PullUp);
+
+  encoderPhaseA.rise(&ai1);
+  encoderPhaseB.rise(&ai0);
 
   while (1) {
-    //receive serial
+    // receive serial
+     
     recvWithStartEndMarkers();
 
     //if valid data, then parse data
@@ -188,5 +218,10 @@ int main(void) {
 
     //check any valid command received
     mCommand();
+     
+    if (counter != temp) {
+    printf("count = %d \r\n", counter);
+    temp = counter;
+    }
   }
 }
