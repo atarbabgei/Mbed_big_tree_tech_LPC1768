@@ -8,9 +8,10 @@
   chrono::duration_cast<chrono::milliseconds>((x).elapsed_time()).count()
 #define timer_read_us(x) (x).elapsed_time().count()
 
-
+bool isTimerOn = false;
 
 Timer t; // timer for polling
+Timer t_encoder;
 unsigned long long timerValue;
 
 // Receive with start- and end-markers combined with parsing
@@ -31,7 +32,7 @@ int integerFromPC = 0;
 char buf[MAXIMUM_BUFFER_SIZE] = {0};
 
 // Encoder Pinout
-QEIx4 encoder(P0_0, P0_1, NC,
+QEIx4 encoder(P0_1, P0_0, NC,
               (QEIx4::EMODE)(QEIx4::IRQ_NO_JAMMING |
                              QEIx4::SPEED)); // QEI with AB signals only
 
@@ -44,8 +45,8 @@ static DigitalOut stepX(P2_2);
 static DigitalOut dirX(P2_6);
 static DigitalOut enX(P2_1);
 
-static DigitalOut linearActuatorINA(P2_4);
-static DigitalOut linearActuatorINB(P2_7);
+static DigitalOut linearActuatorINA(P1_15);
+static DigitalOut linearActuatorINB(P1_16);
 
 static DigitalOut MS1(P1_17);
 static DigitalOut MS2(P0_4);
@@ -111,8 +112,17 @@ void pickup() {
     stepX.write(0);
     ThisThread::sleep_for(1ms);
   }
-  // turn magnet ON, then wait
+
   MAG.write(1);
+  for (int steps =0; steps<100; steps++) {
+    stepX.write(1);
+    ThisThread::sleep_for(1ms);
+    stepX.write(0);
+    ThisThread::sleep_for(1ms);
+  }
+  // turn magnet ON, then wait
+  
+
   ThisThread::sleep_for(500ms);
   // go backward until limitSW detected
   dirX.write(1);
@@ -128,20 +138,22 @@ void mCommand(void) {
   // command [z] then CCW for "integerFromPC" steps
   if (messageFromPC[0] == 'z' && messageFromPC[1] == '\0') {
     if (newCommand == true) {
+      printf("[%s]\r\n",messageFromPC);
       dirX.write(0);
       for (int x = 0; x < integerFromPC; x++) {
-        if (proxSW0 == 1) {
+        //if (proxSW0 == 1) {
           stepX.write(1);
           ThisThread::sleep_for(1ms);
           stepX.write(0);
           ThisThread::sleep_for(1ms);
-        }
+       // }
       }
     }
   }
   // command [x] then CW for "integerFromPC" steps
   else if (messageFromPC[0] == 'x' && messageFromPC[1] == '\0') {
     if (newCommand == true) {
+      printf("[%s]\r\n",messageFromPC);
       dirX.write(1);
       for (int x = 0; x < integerFromPC; x++) {
         if (limitSW == 1) {
@@ -156,6 +168,7 @@ void mCommand(void) {
   // command [m,0]= magnet off, [m,1] = magnet on
   else if (messageFromPC[0] == 'm' && messageFromPC[1] == '\0') {
     if (newCommand == true) {
+        printf("[%s]\r\n",messageFromPC);
       if (integerFromPC == 0) {
         MAG.write(0);
       } else if (integerFromPC == 1) {
@@ -165,6 +178,7 @@ void mCommand(void) {
     // command [s] for picking up trolleys
   } else if (messageFromPC[0] == 's' && messageFromPC[1] == '\0') {
     if (newCommand == true) {
+        printf("[%s]\r\n",messageFromPC);
       pickup();
     }
   }
@@ -172,6 +186,7 @@ void mCommand(void) {
     // command [l,0]= linearact off, [l,1] = linearact down, [l,2] = linearact up
   else if (messageFromPC[0] == 'l' && messageFromPC[1] == '\0') {
     if (newCommand == true) {
+        printf("[%s]\r\n",messageFromPC);
       if (integerFromPC == 0) {
         linearActuatorINA.write(0);
         linearActuatorINB.write(0);
@@ -185,6 +200,17 @@ void mCommand(void) {
       }
     }
     }
+  else if (messageFromPC[0] == 'r' && messageFromPC[1] == '\0') {
+    if (newCommand == true) {
+        printf("[%s]\r\n",messageFromPC);
+      MAG.write(0);
+      t.reset();
+      t.start();
+      //printf("timer start!\n");
+      isTimerOn = true;
+    }
+
+  }
   // get current timer
   else if (messageFromPC[0] == 't' && messageFromPC[1] == '\0') {
     if (newCommand == true) {
@@ -197,6 +223,7 @@ void mCommand(void) {
 int main(void) {
   // Start Timer
   t.start();
+  t_encoder.start();
 
   // Setup Encoder
   encoder.setSpeedFactor(1.0f);
@@ -223,6 +250,7 @@ int main(void) {
 
   while (1) {
     // receive serial
+     
     recvWithStartEndMarkers();
 
     // if valid data, then parse data
@@ -234,12 +262,25 @@ int main(void) {
 
     // check any valid command received
     mCommand();
-
-    if (timer_read_ms(t) > 250) { // every quater second (4 Hz)
-      t.reset();
-      t.start();
-      printf(" count: %6d, speed: %f, pos: %f \r\n", (int)encoder,
-             encoder.getSpeed(), encoder.getPosition()); // print counter values
+     
+    if(isTimerOn == true && proxSW1.read() == 0){
+        t.stop();
+        isTimerOn = false;
+        timerValue = timer_read_ms(t);
+        int mSpeed = (int)encoder.getSpeed();
+        float mPosition = encoder.getPosition()*14.3902;
+        printf("[t,%llu]\n", timerValue);
+        //printf("timer stop!\n");
+        printf(" timer: %d, speed: %d, pos: %f \r\n", (int)timerValue,
+             mSpeed, encoder.getPosition()*14.3902);
     }
+     /* 
+    if (timer_read_ms(t_encoder) > 100) { // every quater second (4 Hz)
+      t_encoder.reset();
+      t_encoder.start();
+      
+      printf(" timer: %d, speed: %d, pos: %f \r\n", (int)timer_read_ms(t_encoder),
+             (int)encoder.getSpeed(), encoder.getPosition()*14.3902); // print counter values
+    }*/
   }
 }
