@@ -205,8 +205,11 @@ void mCommand(void) {
         printf("[%s]\r\n",messageFromPC);
       MAG.write(0);
       t.reset();
+      t_encoder.reset();
       t.start();
-      //printf("timer start!\n");
+      t_encoder.start();
+
+      printf("timer start!\n");
       isTimerOn = true;
     }
 
@@ -274,13 +277,13 @@ int main(void) {
         printf(" timer: %d, speed: %d, pos: %f \r\n", (int)timerValue,
              mSpeed, encoder.getPosition()*14.3902);
     }
-     /* 
-    if (timer_read_ms(t_encoder) > 100) { // every quater second (4 Hz)
+      
+    if (isTimerOn == true && timer_read_ms(t_encoder) > 100) { // every quater second (4 Hz)
       t_encoder.reset();
       t_encoder.start();
       
       printf(" timer: %d, speed: %d, pos: %f \r\n", (int)timer_read_ms(t_encoder),
              (int)encoder.getSpeed(), encoder.getPosition()*14.3902); // print counter values
-    }*/
+    }
   }
 }
