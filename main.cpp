@@ -10,12 +10,11 @@
 
 bool isTimerOn = false;
 
-Timer t; // timer for polling
-Timer t_encoder;
-unsigned long long timerValue;
+Timer t; 
+
 unsigned long long previousMillis = 0; 
-float currentPosition;
-float totalPosition;
+float previousPosition = 0;
+
 
 // Receive with start- and end-markers combined with parsing
 const unsigned char numChars = 8;
@@ -136,7 +135,7 @@ void pickup() {
     ThisThread::sleep_for(1ms);
   }
 
-  currentPosition = encoder.getPosition()*14.3902;
+  previousPosition = encoder.getPosition();
 }
 
 void mCommand(void) {
@@ -207,14 +206,11 @@ void mCommand(void) {
     }
   else if (messageFromPC[0] == 'r' && messageFromPC[1] == '\0') {
     if (newCommand == true) {
-        printf("[%s]\r\n",messageFromPC);
+    printf("[%s]\r\n",messageFromPC);
       MAG.write(0);
       t.reset();
-      t_encoder.reset();
       t.start();
-      t_encoder.start();
-
-      printf("timer start!\n");
+      //printf("timer start!\n");
       isTimerOn = true;
     }
 
@@ -222,7 +218,7 @@ void mCommand(void) {
   // get current timer
   else if (messageFromPC[0] == 't' && messageFromPC[1] == '\0') {
     if (newCommand == true) {
-      printf("[t,%llu]\n", timerValue);
+      printf("[t,%llu]\n", previousMillis);
     }
   }
   newCommand = false;
@@ -231,7 +227,6 @@ void mCommand(void) {
 int main(void) {
   // Start Timer
   t.start();
-  t_encoder.start();
 
   // Setup Encoder
   encoder.setSpeedFactor(1.0f);
@@ -259,7 +254,8 @@ int main(void) {
   while (1) {
     // receive serial
     unsigned long long currentMillis = timer_read_ms(t);
-     
+    float currentPosition = (encoder.getPosition() - previousPosition) * 14.3902;
+    
     recvWithStartEndMarkers();
 
     // if valid data, then parse data
@@ -277,21 +273,18 @@ int main(void) {
         if (proxSW1.read() == 0){
         t.stop();
         isTimerOn = false;
-        previousMillis = currentMillis;
-        int mSpeed = (int)encoder.getSpeed();
-        totalPosition =  encoder.getPosition()*14.3902 - currentPosition;
-        printf("[t,%llu]\n", timerValue);
-        //printf("timer stop!\n");
         
-        printf(" timer: %d, speed: %d, pos: %d \r\n", (int)currentMillis,
-             mSpeed, (int)totalPosition);}
+        float currentSpeed = encoder.getSpeed(); 
+            printf(" timer: %d, speed: %d, pos: %d \r\n", (int)currentMillis,
+             (int)currentSpeed, (int)currentPosition);
+             }
 
-        if (currentMillis - previousMillis >= 100) { // every quater second (4 Hz)
+        if (currentMillis - previousMillis >= 100) { 
             previousMillis = currentMillis;
-
-            totalPosition = encoder.getPosition()*14.3902 - currentPosition;
-            printf(" timer: %d, speed: %d, pos: %d \r\n", (int)timer_read_ms(t),
-             (int)encoder.getSpeed(), (int)totalPosition); // print counter values
+            
+            float currentSpeed = encoder.getSpeed(); 
+            printf(" timer: %d, speed: %d, pos: %d \r\n", (int)currentMillis,
+             (int)currentSpeed, (int)currentPosition);
     }
     }
   }
