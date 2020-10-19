@@ -13,6 +13,9 @@ bool isTimerOn = false;
 Timer t; // timer for polling
 Timer t_encoder;
 unsigned long long timerValue;
+unsigned long long previousMillis = 0; 
+float currentPosition;
+float totalPosition;
 
 // Receive with start- and end-markers combined with parsing
 const unsigned char numChars = 8;
@@ -132,6 +135,8 @@ void pickup() {
     stepX.write(0);
     ThisThread::sleep_for(1ms);
   }
+
+  currentPosition = encoder.getPosition()*14.3902;
 }
 
 void mCommand(void) {
@@ -253,6 +258,7 @@ int main(void) {
 
   while (1) {
     // receive serial
+    unsigned long long currentMillis = timer_read_ms(t);
      
     recvWithStartEndMarkers();
 
@@ -266,24 +272,27 @@ int main(void) {
     // check any valid command received
     mCommand();
      
-    if(isTimerOn == true && proxSW1.read() == 0){
+    if(isTimerOn == true){
+
+        if (proxSW1.read() == 0){
         t.stop();
         isTimerOn = false;
-        timerValue = timer_read_ms(t);
+        previousMillis = currentMillis;
         int mSpeed = (int)encoder.getSpeed();
-        float mPosition = encoder.getPosition()*14.3902;
+        totalPosition =  encoder.getPosition()*14.3902 - currentPosition;
         printf("[t,%llu]\n", timerValue);
         //printf("timer stop!\n");
-        printf(" timer: %d, speed: %d, pos: %f \r\n", (int)timerValue,
-             mSpeed, encoder.getPosition()*14.3902);
+        
+        printf(" timer: %d, speed: %d, pos: %d \r\n", (int)currentMillis,
+             mSpeed, (int)totalPosition);}
+
+        if (currentMillis - previousMillis >= 100) { // every quater second (4 Hz)
+            previousMillis = currentMillis;
+
+            totalPosition = encoder.getPosition()*14.3902 - currentPosition;
+            printf(" timer: %d, speed: %d, pos: %d \r\n", (int)timer_read_ms(t),
+             (int)encoder.getSpeed(), (int)totalPosition); // print counter values
     }
-      
-    if (isTimerOn == true && timer_read_ms(t_encoder) > 100) { // every quater second (4 Hz)
-      t_encoder.reset();
-      t_encoder.start();
-      
-      printf(" timer: %d, speed: %d, pos: %f \r\n", (int)timer_read_ms(t_encoder),
-             (int)encoder.getSpeed(), encoder.getPosition()*14.3902); // print counter values
     }
   }
 }
