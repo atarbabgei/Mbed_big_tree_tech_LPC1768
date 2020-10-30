@@ -9,12 +9,11 @@
 #define timer_read_us(x) (x).elapsed_time().count()
 
 bool isTimerOn = false;
-
 Timer t; 
-
 unsigned long long previousMillis = 0; 
 float previousPosition = 0;
-
+float previousSpeed = 0;
+int counter = 0;
 
 // Receive with start- and end-markers combined with parsing
 const unsigned char numChars = 8;
@@ -123,7 +122,6 @@ void pickup() {
     ThisThread::sleep_for(1ms);
   }
   // turn magnet ON, then wait
-  
 
   ThisThread::sleep_for(500ms);
   // go backward until limitSW detected
@@ -211,6 +209,7 @@ void mCommand(void) {
       t.reset();
       t.start();
       //printf("timer start!\n");
+      counter = 0;
       isTimerOn = true;
     }
 
@@ -221,6 +220,12 @@ void mCommand(void) {
       printf("[t,%llu]\n", previousMillis);
     }
   }
+    // get current speed
+  else if (messageFromPC[0] == 'v' && messageFromPC[1] == '\0') {
+    if (newCommand == true) {
+      printf("[v,%d]\n", (int) previousSpeed);
+    }
+  }
   newCommand = false;
 };
 
@@ -229,7 +234,7 @@ int main(void) {
   t.start();
 
   // Setup Encoder
-  encoder.setSpeedFactor(1.0f);
+  encoder.setSpeedFactor(0.09f);
   encoder.setPositionFactor((1.0 / 1600));
 
   serial_port.set_baud(57600);
@@ -273,18 +278,22 @@ int main(void) {
         if (proxSW1.read() == 0){
         t.stop();
         isTimerOn = false;
-        
+        previousMillis = currentMillis;
         float currentSpeed = encoder.getSpeed(); 
-            printf(" timer: %d, speed: %d, pos: %d \r\n", (int)currentMillis,
-             (int)currentSpeed, (int)currentPosition);
+        previousSpeed = currentSpeed;
+        counter = counter+1;
+            /*printf(" timer: %d, speed: %d, pos: %d \r\n", (int)currentMillis,
+             (int)currentSpeed, (int)currentPosition);*/
              }
 
         if (currentMillis - previousMillis >= 100) { 
             previousMillis = currentMillis;
-            
             float currentSpeed = encoder.getSpeed(); 
+            previousSpeed = currentSpeed;
+            counter = counter+1;
+            /*
             printf(" timer: %d, speed: %d, pos: %d \r\n", (int)currentMillis,
-             (int)currentSpeed, (int)currentPosition);
+             (int)currentSpeed, (int)currentPosition);*/
     }
     }
   }
