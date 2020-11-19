@@ -9,11 +9,14 @@
 #define timer_read_us(x) (x).elapsed_time().count()
 
 bool isTimerOn = false;
-Timer t; 
-unsigned long long previousMillis = 0; 
+Timer t;
+unsigned long long previousMillis = 0;
 float previousPosition = 0;
 float previousSpeed = 0;
-int counter = 0;
+int data_counter = 0;
+
+float currentPosition;
+int data_timer[100], data_speed[100], data_position[100];
 
 // Receive with start- and end-markers combined with parsing
 const unsigned char numChars = 8;
@@ -115,7 +118,7 @@ void pickup() {
   }
 
   MAG.write(1);
-  for (int steps =0; steps<100; steps++) {
+  for (int steps = 0; steps < 100; steps++) {
     stepX.write(1);
     ThisThread::sleep_for(1ms);
     stepX.write(0);
@@ -140,22 +143,22 @@ void mCommand(void) {
   // command [z] then CCW for "integerFromPC" steps
   if (messageFromPC[0] == 'z' && messageFromPC[1] == '\0') {
     if (newCommand == true) {
-      printf("[%s]\r\n",messageFromPC);
+      printf("[%s]\r\n", messageFromPC);
       dirX.write(0);
       for (int x = 0; x < integerFromPC; x++) {
-        //if (proxSW0 == 1) {
-          stepX.write(1);
-          ThisThread::sleep_for(1ms);
-          stepX.write(0);
-          ThisThread::sleep_for(1ms);
-       // }
+        // if (proxSW0 == 1) {
+        stepX.write(1);
+        ThisThread::sleep_for(1ms);
+        stepX.write(0);
+        ThisThread::sleep_for(1ms);
+        // }
       }
     }
   }
   // command [x] then CW for "integerFromPC" steps
   else if (messageFromPC[0] == 'x' && messageFromPC[1] == '\0') {
     if (newCommand == true) {
-      printf("[%s]\r\n",messageFromPC);
+      printf("[%s]\r\n", messageFromPC);
       dirX.write(1);
       for (int x = 0; x < integerFromPC; x++) {
         if (limitSW == 1) {
@@ -170,7 +173,7 @@ void mCommand(void) {
   // command [m,0]= magnet off, [m,1] = magnet on
   else if (messageFromPC[0] == 'm' && messageFromPC[1] == '\0') {
     if (newCommand == true) {
-        printf("[%s]\r\n",messageFromPC);
+      printf("[%s]\r\n", messageFromPC);
       if (integerFromPC == 0) {
         MAG.write(0);
       } else if (integerFromPC == 1) {
@@ -180,36 +183,34 @@ void mCommand(void) {
     // command [s] for picking up trolleys
   } else if (messageFromPC[0] == 's' && messageFromPC[1] == '\0') {
     if (newCommand == true) {
-        printf("[%s]\r\n",messageFromPC);
+      printf("[%s]\r\n", messageFromPC);
       pickup();
     }
   }
 
-    // command [l,0]= linearact off, [l,1] = linearact down, [l,2] = linearact up
+  // command [l,0]= linearact off, [l,1] = linearact down, [l,2] = linearact up
   else if (messageFromPC[0] == 'l' && messageFromPC[1] == '\0') {
     if (newCommand == true) {
-        printf("[%s]\r\n",messageFromPC);
+      printf("[%s]\r\n", messageFromPC);
       if (integerFromPC == 0) {
         linearActuatorINA.write(0);
         linearActuatorINB.write(0);
       } else if (integerFromPC == 1) {
         linearActuatorINA.write(0);
         linearActuatorINB.write(1);
-      }
-      else if (integerFromPC == 2) {
+      } else if (integerFromPC == 2) {
         linearActuatorINA.write(1);
         linearActuatorINB.write(0);
       }
     }
-    }
-  else if (messageFromPC[0] == 'r' && messageFromPC[1] == '\0') {
+  } else if (messageFromPC[0] == 'r' && messageFromPC[1] == '\0') {
     if (newCommand == true) {
-    printf("[%s]\r\n",messageFromPC);
+      printf("[%s]\r\n", messageFromPC);
       MAG.write(0);
       t.reset();
       t.start();
-      //printf("timer start!\n");
-      counter = 0;
+      // printf("timer start!\n");
+      data_counter = 0;
       isTimerOn = true;
     }
 
@@ -220,17 +221,44 @@ void mCommand(void) {
       printf("[t,%llu]\n", previousMillis);
     }
   }
-    // get current speed
+  // get current speed
   else if (messageFromPC[0] == 'v' && messageFromPC[1] == '\0') {
     if (newCommand == true) {
-      printf("[v,%d]\n", (int) previousSpeed);
+      printf("[v,%d]\n", (int)previousSpeed);
     }
   }
+
+  // get current position
+  else if (messageFromPC[0] == 'p' && messageFromPC[1] == '\0') {
+    if (newCommand == true) {
+      printf("[p,%d]\n", (int)currentPosition);
+    }
+  }
+
+  // get current data
+  else if (messageFromPC[0] == 'd' && messageFromPC[1] == '\0') {
+    if (newCommand == true) {
+      // first 3 data are usually random, so we rewrite to 0
+      data_speed[0] = 0;
+      data_speed[1] = 0;
+      data_speed[2] = 0;
+
+      // augmented first 100ms data, so it won't 0
+      data_speed[2] = data_speed[3] / 2;
+
+      // start from 2, so leave first 2 data.
+      for (int i = 2; i <= data_counter; i++) {
+        printf("[d,%d,%d,%d]\n", i - 1, data_timer[i], data_speed[i]);
+      }
+    }
+  }
+
   newCommand = false;
 };
 
 int main(void) {
   // Start Timer
+  t.reset();
   t.start();
 
   // Setup Encoder
@@ -259,8 +287,8 @@ int main(void) {
   while (1) {
     // receive serial
     unsigned long long currentMillis = timer_read_ms(t);
-    float currentPosition = (encoder.getPosition() - previousPosition) * 14.3902;
-    
+    currentPosition = (encoder.getPosition() - previousPosition) * 14.3902;
+
     recvWithStartEndMarkers();
 
     // if valid data, then parse data
@@ -272,29 +300,51 @@ int main(void) {
 
     // check any valid command received
     mCommand();
-     
-    if(isTimerOn == true){
 
-        if (proxSW1.read() == 0){
+    if (isTimerOn == true) {
+
+      if (proxSW1.read() == 0) {
         t.stop();
         isTimerOn = false;
-        previousMillis = currentMillis;
-        float currentSpeed = encoder.getSpeed(); 
-        previousSpeed = currentSpeed;
-        counter = counter+1;
-            /*printf(" timer: %d, speed: %d, pos: %d \r\n", (int)currentMillis,
-             (int)currentSpeed, (int)currentPosition);*/
-             }
 
-        if (currentMillis - previousMillis >= 100) { 
-            previousMillis = currentMillis;
-            float currentSpeed = encoder.getSpeed(); 
-            previousSpeed = currentSpeed;
-            counter = counter+1;
-            /*
-            printf(" timer: %d, speed: %d, pos: %d \r\n", (int)currentMillis,
-             (int)currentSpeed, (int)currentPosition);*/
-    }
+        float currentSpeed = encoder.getSpeed();
+        previousSpeed = currentSpeed;
+        data_counter = data_counter + 1;
+        data_timer[data_counter] = (int)currentMillis;
+        data_speed[data_counter] = (int)currentSpeed;
+        data_position[data_counter] = (int)currentPosition;
+
+        // get data when proxSW1 = 1;
+        /*
+        printf("count:%d, timer: %d, speed: %d, pos: %d \r\n", data_counter,
+        (int)currentMillis, (int)currentSpeed, (int)currentPosition);*/
+
+        /*
+                printf("count:%d, timer: %d, speed: %d, pos: %d \r\n",
+           data_counter,  data_timer[data_counter], data_speed[data_counter],
+           data_position[data_counter]);   */
+        previousMillis = currentMillis;
+      }
+
+      if (currentMillis - previousMillis >= 100) {
+
+        float currentSpeed = encoder.getSpeed();
+        previousSpeed = currentSpeed;
+        data_counter = data_counter + 1;
+        data_timer[data_counter] = (int)currentMillis;
+        data_speed[data_counter] = (int)currentSpeed;
+        data_position[data_counter] = (int)currentPosition;
+
+        // get data every 100ms;
+        /*
+        printf("count:%d, timer: %d, speed: %d, pos: %d \r\n", data_counter,
+        (int)currentMillis, (int)currentSpeed, (int)currentPosition);*/
+        /*
+                printf("count:%d, timer: %d, speed: %d, pos: %d \r\n",
+           data_counter,  data_timer[data_counter], data_speed[data_counter],
+           data_position[data_counter]);   */
+        previousMillis = currentMillis;
+      }
     }
   }
 }
