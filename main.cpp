@@ -1,5 +1,6 @@
 #include "QEIx4.h"
 #include "mbed.h"
+#include <cmath>
 
 #define timer_read_f(x) chrono::duration<float>((x).elapsed_time()).count()
 #define timer_read_s(x)                                                        \
@@ -8,14 +9,24 @@
   chrono::duration_cast<chrono::milliseconds>((x).elapsed_time()).count()
 #define timer_read_us(x) (x).elapsed_time().count()
 
+// Ratio for
+#define ENCODER_POSITION_FACTOR (1.0 / 1600 * 14.6386)
+#define ENCODER_SPEED_FACTOR 0.09f
+
+const int LIMITSW_POSITION = 100;
+
 bool isTimerOn = false;
 Timer t;
 unsigned long long previousMillis = 0;
-float previousPosition = 0;
+int currentPositionStepper;
+float currentPosition;
+float currentPositionStepper_inCM;
+float currentPositionEncoder;
+int previousPositionStepper;
+float previousPositionEncoder = 0;
 float previousSpeed = 0;
 int data_counter = 50;
 
-float currentPosition;
 int data_timer[100], data_speed[100], data_position[100];
 
 // Receive with start- and end-markers combined with parsing
@@ -136,38 +147,51 @@ void pickup() {
     ThisThread::sleep_for(1ms);
   }
 
-  previousPosition = encoder.getPosition();
+  previousPositionStepper = 0;
+  previousPositionEncoder = encoder.getPosition();
 }
 
 void mCommand(void) {
   // command [z] then CCW for "integerFromPC" steps
   if (messageFromPC[0] == 'z' && messageFromPC[1] == '\0') {
     if (newCommand == true) {
-      printf("[%s]\r\n", messageFromPC);
+      int _steps;
       dirX.write(0);
       for (int x = 0; x < integerFromPC; x++) {
-         if (proxSW1 == 1) {
-        stepX.write(1);
-        ThisThread::sleep_for(1ms);
-        stepX.write(0);
-        ThisThread::sleep_for(1ms);
-         }
-      }
-    }
-  }
-  // command [x] then CW for "integerFromPC" steps
-  else if (messageFromPC[0] == 'x' && messageFromPC[1] == '\0') {
-    if (newCommand == true) {
-      printf("[%s]\r\n", messageFromPC);
-      dirX.write(1);
-      for (int x = 0; x < integerFromPC; x++) {
-        if (limitSW == 1) {
+        if (proxSW1 == 1) {
+          _steps++;
           stepX.write(1);
           ThisThread::sleep_for(1ms);
           stepX.write(0);
           ThisThread::sleep_for(1ms);
         }
       }
+      currentPositionStepper = previousPositionStepper + _steps;
+      currentPositionStepper_inCM = round(currentPositionStepper* 0.01985);
+      previousPositionStepper = currentPositionStepper;
+      previousPositionEncoder = encoder.getPosition();
+      printf("[%s,%d]\r\n", messageFromPC, (int)(100-currentPositionStepper_inCM));
+    }
+  }
+  // command [x] then CW for "integerFromPC" steps
+  else if (messageFromPC[0] == 'x' && messageFromPC[1] == '\0') {
+    if (newCommand == true) {
+      int _steps;
+      dirX.write(1);
+      for (int x = 0; x < integerFromPC; x++) {
+        if (limitSW == 1) {
+          _steps++;
+          stepX.write(1);
+          ThisThread::sleep_for(1ms);
+          stepX.write(0);
+          ThisThread::sleep_for(1ms);
+        }
+      }
+      currentPositionStepper = previousPositionStepper - _steps;
+      currentPositionStepper_inCM = round(currentPositionStepper* 0.01985);
+      previousPositionStepper = currentPositionStepper;
+      previousPositionEncoder = encoder.getPosition();
+      printf("[%s,%d]\r\n", messageFromPC, (int)(100-currentPositionStepper_inCM));
     }
   }
   // command [m,0]= magnet off, [m,1] = magnet on
@@ -228,13 +252,6 @@ void mCommand(void) {
     }
   }
 
-  // get current position
-  else if (messageFromPC[0] == 'p' && messageFromPC[1] == '\0') {
-    if (newCommand == true) {
-      printf("[p,%d]\n", (int)currentPosition);
-    }
-  }
-
   // get current data
   else if (messageFromPC[0] == 'd' && messageFromPC[1] == '\0') {
     if (newCommand == true) {
@@ -254,7 +271,7 @@ void mCommand(void) {
     }
   }
 
-    // get current data position
+  // get current data position
   else if (messageFromPC[0] == 'e' && messageFromPC[1] == '\0') {
     if (newCommand == true) {
       // first 3 data are usually random, so we rewrite to 0
@@ -267,7 +284,7 @@ void mCommand(void) {
 
       // start from 2, so leave first 2 data.
       for (int i = 2; i <= data_counter; i++) {
-        printf("[d,%d,%d,%d]", i - 1, data_timer[i], data_position[i]);
+        printf("[e,%d,%d,%d]", i - 1, data_timer[i], data_position[i]);
       }
       printf("\r\n");
     }
@@ -282,12 +299,12 @@ int main(void) {
   t.start();
 
   // Setup Encoder
-  encoder.setSpeedFactor(0.09f);
-  encoder.setPositionFactor((1.0 / 1600));
+  encoder.setSpeedFactor(ENCODER_SPEED_FACTOR);
+  encoder.setPositionFactor(ENCODER_POSITION_FACTOR);
 
   serial_port.set_baud(57600);
   serial_port.set_format(8, BufferedSerial::None, 1);
-  //serial_port.set_blocking(false);
+
   printf("Praktikum Fisdas\r\n");
 
   // enable stepper, set step_size
@@ -308,8 +325,8 @@ int main(void) {
   while (1) {
     // receive serial
     unsigned long long currentMillis = timer_read_ms(t);
-    currentPosition = (encoder.getPosition() - previousPosition) * 14.3902;
-
+    currentPositionEncoder = (encoder.getPosition() - previousPositionEncoder);
+     
     recvWithStartEndMarkers();
 
     // if valid data, then parse data
@@ -333,13 +350,9 @@ int main(void) {
         data_counter = data_counter + 1;
         data_timer[data_counter] = (int)currentMillis;
         data_speed[data_counter] = (int)currentSpeed;
-        data_position[data_counter] = (int)currentPosition;
+        data_position[data_counter] = (int)round(currentPositionEncoder);
 
         // get data when proxSW1 = 1;
-        /*
-        printf("count:%d, timer: %d, speed: %d, pos: %d \r\n", data_counter,
-        (int)currentMillis, (int)currentSpeed, (int)currentPosition);*/
-
         /*
                 printf("count:%d, timer: %d, speed: %d, pos: %d \r\n",
            data_counter,  data_timer[data_counter], data_speed[data_counter],
@@ -354,12 +367,9 @@ int main(void) {
         data_counter = data_counter + 1;
         data_timer[data_counter] = (int)currentMillis;
         data_speed[data_counter] = (int)currentSpeed;
-        data_position[data_counter] = (int)currentPosition;
+        data_position[data_counter] = (int)round(currentPositionEncoder);
 
         // get data every 100ms;
-        /*
-        printf("count:%d, timer: %d, speed: %d, pos: %d \r\n", data_counter,
-        (int)currentMillis, (int)currentSpeed, (int)currentPosition);*/
         /*
                 printf("count:%d, timer: %d, speed: %d, pos: %d \r\n",
            data_counter,  data_timer[data_counter], data_speed[data_counter],
