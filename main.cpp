@@ -13,7 +13,7 @@ Timer t;
 unsigned long long previousMillis = 0;
 float previousPosition = 0;
 float previousSpeed = 0;
-int data_counter = 0;
+int data_counter = 50;
 
 float currentPosition;
 int data_timer[100], data_speed[100], data_position[100];
@@ -146,12 +146,12 @@ void mCommand(void) {
       printf("[%s]\r\n", messageFromPC);
       dirX.write(0);
       for (int x = 0; x < integerFromPC; x++) {
-        // if (proxSW0 == 1) {
+         if (proxSW1 == 1) {
         stepX.write(1);
         ThisThread::sleep_for(1ms);
         stepX.write(0);
         ThisThread::sleep_for(1ms);
-        // }
+         }
       }
     }
   }
@@ -248,8 +248,28 @@ void mCommand(void) {
 
       // start from 2, so leave first 2 data.
       for (int i = 2; i <= data_counter; i++) {
-        printf("[d,%d,%d,%d]\n", i - 1, data_timer[i], data_speed[i]);
+        printf("[d,%d,%d,%d]", i - 1, data_timer[i], data_speed[i]);
       }
+      printf("\r\n");
+    }
+  }
+
+    // get current data position
+  else if (messageFromPC[0] == 'e' && messageFromPC[1] == '\0') {
+    if (newCommand == true) {
+      // first 3 data are usually random, so we rewrite to 0
+      data_position[0] = 0;
+      data_position[1] = 0;
+      data_position[2] = 0;
+
+      // augmented first 100ms data, so it won't 0
+      data_position[2] = data_position[3] / 2;
+
+      // start from 2, so leave first 2 data.
+      for (int i = 2; i <= data_counter; i++) {
+        printf("[d,%d,%d,%d]", i - 1, data_timer[i], data_position[i]);
+      }
+      printf("\r\n");
     }
   }
 
@@ -267,6 +287,7 @@ int main(void) {
 
   serial_port.set_baud(57600);
   serial_port.set_format(8, BufferedSerial::None, 1);
+  //serial_port.set_blocking(false);
   printf("Praktikum Fisdas\r\n");
 
   // enable stepper, set step_size
