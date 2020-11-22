@@ -16,6 +16,8 @@
 const int LIMITSW_POSITION = 100;
 
 bool isTimerOn = false;
+
+
 Timer t;
 unsigned long long previousMillis = 0;
 int currentPositionStepper;
@@ -27,6 +29,7 @@ float previousPositionEncoder = 0;
 float previousSpeed = 0;
 int data_counter = 50;
 
+bool isNewDataRequest = false;
 int data_timer[100], data_speed[100], data_position[100];
 
 // Receive with start- and end-markers combined with parsing
@@ -129,12 +132,14 @@ void pickup() {
   }
 
   MAG.write(1);
+  /*
+  //add more steps to make sure that the trolley is attached to magnet
   for (int steps = 0; steps < 100; steps++) {
     stepX.write(1);
     ThisThread::sleep_for(1ms);
     stepX.write(0);
     ThisThread::sleep_for(1ms);
-  }
+  }*/
   // turn magnet ON, then wait
 
   ThisThread::sleep_for(500ms);
@@ -148,6 +153,7 @@ void pickup() {
   }
 
   previousPositionStepper = 0;
+  currentPositionStepper_inCM = 0;
   previousPositionEncoder = encoder.getPosition();
 }
 
@@ -209,6 +215,7 @@ void mCommand(void) {
     if (newCommand == true) {
       printf("[%s]\r\n", messageFromPC);
       pickup();
+      isNewDataRequest = true; // allow to request new data using 'd'
     }
   }
 
@@ -230,12 +237,16 @@ void mCommand(void) {
   } else if (messageFromPC[0] == 'r' && messageFromPC[1] == '\0') {
     if (newCommand == true) {
       printf("[%s]\r\n", messageFromPC);
-      MAG.write(0);
-      t.reset();
-      t.start();
-      // printf("timer start!\n");
-      data_counter = 0;
-      isTimerOn = true;
+      if(isNewDataRequest == true){
+        MAG.write(0);
+        t.reset();
+        t.start();
+        // printf("timer start!\n");
+        data_counter = 0;
+        isTimerOn = true;
+        isNewDataRequest = false;
+      }
+
     }
 
   }
@@ -249,6 +260,13 @@ void mCommand(void) {
   else if (messageFromPC[0] == 'v' && messageFromPC[1] == '\0') {
     if (newCommand == true) {
       printf("[v,%d]\n", (int)previousSpeed);
+    }
+  }
+
+  // get current position
+  else if (messageFromPC[0] == 'p' && messageFromPC[1] == '\0') {
+    if (newCommand == true) {
+      printf("[%s,%d]\r\n", messageFromPC, (int)(100-currentPositionStepper_inCM));
     }
   }
 
@@ -358,6 +376,7 @@ int main(void) {
            data_counter,  data_timer[data_counter], data_speed[data_counter],
            data_position[data_counter]);   */
         previousMillis = currentMillis;
+        currentPositionStepper_inCM = 100; // 
       }
 
       if (currentMillis - previousMillis >= 100) {
